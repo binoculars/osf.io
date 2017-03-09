@@ -38,7 +38,8 @@ class PreprintMixin(NodeMixin):
         preprint = get_object_or_error(
             PreprintService,
             self.kwargs[self.preprint_lookup_url_kwarg],
-            display_name='preprint'
+            display_name='preprint',
+            prefetch_fields=self.serializer_class().model_field_names
         )
         if not preprint:
             raise NotFound
@@ -165,6 +166,7 @@ class PreprintList(JSONAPIBaseView, generics.ListCreateAPIView, ODMFilterMixin):
         if field_name == 'tags':
             if operation['value'] not in (list(), tuple()):
                 operation['source_field_name'] = 'tags__name'
+                operation['op'] = 'iexact'
 
         if field_name == 'provider':
             operation['source_field_name'] = 'provider___id'

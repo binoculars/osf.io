@@ -361,20 +361,24 @@ def sharejs(ctx, host=None, port=None, db_url=None, cors_allow_origin=None):
 
 
 @task(aliases=['celery'])
-def celery_worker(ctx, level='debug', hostname=None, beat=False):
+def celery_worker(ctx, level='debug', hostname=None, beat=False, queues=None):
     """Run the Celery process."""
+    os.environ['DJANGO_SETTINGS_MODULE'] = 'api.base.settings'
     cmd = 'celery worker -A framework.celery_tasks -l {0}'.format(level)
     if hostname:
         cmd = cmd + ' --hostname={}'.format(hostname)
     # beat sets up a cron like scheduler, refer to website/settings
     if beat:
         cmd = cmd + ' --beat'
+    if queues:
+        cmd = cmd + ' --queues={}'.format(queues)
     ctx.run(bin_prefix(cmd), pty=True)
 
 
 @task(aliases=['beat'])
 def celery_beat(ctx, level='debug', schedule=None):
     """Run the Celery process."""
+    os.environ['DJANGO_SETTINGS_MODULE'] = 'api.base.settings'
     # beat sets up a cron like scheduler, refer to website/settings
     cmd = 'celery beat -A framework.celery_tasks -l {0} --pidfile='.format(level)
     if schedule:
@@ -409,7 +413,10 @@ def elasticsearch(ctx):
 @task
 def migrate_search(ctx, delete=False, index=settings.ELASTIC_INDEX):
     """Migrate the search-enabled models."""
+    from website.app import init_app
+    init_app(routes=False, set_backends=False)
     from website.search_migration.migrate import migrate
+
     migrate(delete, index=index)
 
 
@@ -460,7 +467,7 @@ def flake(ctx):
 
 
 @task(aliases=['req'])
-def requirements(ctx, base=False, addons=False, release=False, dev=False, metrics=False, quick=False):
+def requirements(ctx, base=False, addons=False, release=False, dev=False, quick=False):
     """Install python dependencies.
 
     Examples:
@@ -470,15 +477,15 @@ def requirements(ctx, base=False, addons=False, release=False, dev=False, metric
     Quick requirements are, in order, addons, dev and the base requirements. You should be able to use --quick for
     day to day development.
 
-    By default, base requirements will run. However, if any set of addons, release, dev, or metrics are chosen, base
+    By default, base requirements will run. However, if any set of addons, release, or dev are chosen, base
     will have to be mentioned explicitly in order to run. This is to remain compatible with previous usages. Release
-    requirements will prevent dev, metrics, and base from running.
+    requirements will prevent dev, and base from running.
     """
     if quick:
         base = True
         addons = True
         dev = True
-    if not(addons or dev or metrics):
+    if not(addons or dev):
         base = True
     if release or addons:
         addon_requirements(ctx)
@@ -497,12 +504,6 @@ def requirements(ctx, base=False, addons=False, release=False, dev=False, metric
                 echo=True
             )
 
-        if metrics:  # then dev requirements
-            req_file = os.path.join(HERE, 'requirements', 'metrics.txt')
-            ctx.run(
-                pip_install(req_file, constraints_file=CONSTRAINTS_PATH),
-                echo=True
-            )
         if base:  # then base requirements
             req_file = os.path.join(HERE, 'requirements.txt')
             ctx.run(
@@ -514,18 +515,26 @@ def requirements(ctx, base=False, addons=False, release=False, dev=False, metric
     ctx.run('pip install --no-cache-dir uritemplate.py==0.3.0')
 
 @task
-def test_module(ctx, module=None):
+def test_module(ctx, module=None, numprocesses=None):
     """Helper for running tests.
     """
+    os.environ['DJANGO_SETTINGS_MODULE'] = 'osf_tests.settings'
     import pytest
+    if not numprocesses:
+        from multiprocessing import cpu_count
+        numprocesses = cpu_count()
+    # NOTE: Subprocess to compensate for lack of thread safety in the httpretty module.
+    # https://github.com/gabrielfalcao/HTTPretty/issues/209#issue-54090252
     args = ['-s']
+    if numprocesses > 1:
+        args += ['-n {}'.format(numprocesses)]
     modules = [module] if isinstance(module, basestring) else module
     args.extend(modules)
     retcode = pytest.main(args)
     sys.exit(retcode)
 
 # TODO: Add to this list when more modules are ported for djangosf compat
-CORE_TESTS = [
+OSF_TESTS = [
     'osf_tests',
     'tests/test_views.py',
     'tests/test_addons.py',
@@ -555,15 +564,11 @@ CORE_TESTS = [
     'tests/test_subjects.py',
     'tests/test_tokens.py',
     'tests/test_webtests.py',
-]
-@task
-def test_osf(ctx):
-    """Run the OSF test suite."""
-    test_module(ctx, module=CORE_TESTS)
-
-
-ELSE_TESTS = [
-    'addons',
+    'tests/test_utils.py',
+    'tests/test_registrations/test_retractions.py',
+    'tests/test_registrations/test_embargoes.py',
+    'tests/test_registrations/test_registration_approvals.py',
+    'tests/test_registrations/test_views.py',
 ]
 API_TESTS1 = [
     'api_tests/identifiers',
@@ -574,13 +579,13 @@ API_TESTS1 = [
     'api_tests/preprint_providers',
     'api_tests/preprints',
     'api_tests/registrations',
+    'api_tests/users',
 ]
 API_TESTS2 = [
     'api_tests/nodes',
-    'api_tests/users',
 ]
 API_TESTS3 = [
-    'api_tests/addons',
+    'api_tests/addons_tests',
     'api_tests/applications',
     'api_tests/base',
     'api_tests/collections',
@@ -594,23 +599,33 @@ API_TESTS3 = [
     'api_tests/view_only_links',
     'api_tests/wikis',
 ]
+ADDON_TESTS = [
+    'addons/',
+]
+
 
 @task
-def test_else(ctx):
-    """Run the API test suite."""
-    test_module(ctx, module=ELSE_TESTS)
+def test_osf(ctx, numprocesses=None):
+    """Run the OSF test suite."""
+    test_module(ctx, module=OSF_TESTS, numprocesses=numprocesses)
+
+
 @task
-def test_api1(ctx):
+def test_api1(ctx, numprocesses=None):
     """Run the API test suite."""
-    test_module(ctx, module=API_TESTS1)
+    test_module(ctx, module=API_TESTS1, numprocesses=numprocesses)
+
+
 @task
-def test_api2(ctx):
+def test_api2(ctx, numprocesses=None):
     """Run the API test suite."""
-    test_module(ctx, module=API_TESTS2)
+    test_module(ctx, module=API_TESTS2, numprocesses=numprocesses)
+
+
 @task
-def test_api3(ctx):
+def test_api3(ctx, numprocesses=None):
     """Run the API test suite."""
-    test_module(ctx, module=API_TESTS3)
+    test_module(ctx, module=API_TESTS3, numprocesses=numprocesses)
 
 
 @task
@@ -620,6 +635,13 @@ def test_admin(ctx):
     module = 'admin_tests/'
     module_fmt = ' '.join(module) if isinstance(module, list) else module
     admin_tasks.manage(ctx, 'test {}'.format(module_fmt))
+
+
+@task
+def test_addons(ctx, numprocesses=None):
+    """Run all the tests in the addons directory.
+    """
+    test_module(ctx, module=ADDON_TESTS, numprocesses=numprocesses)
 
 
 @task
@@ -633,16 +655,6 @@ def test_varnish(ctx):
         proc.kill()
 
 
-ADDON_TESTS = [
-    'addons/',
-]
-@task
-def test_addons(ctx):
-    """Run all the tests in the addons directory.
-    """
-    test_module(ctx, module=ADDON_TESTS)
-
-
 @task
 def test(ctx, all=False, syntax=False):
     """
@@ -653,20 +665,16 @@ def test(ctx, all=False, syntax=False):
         jshint(ctx)
 
     test_osf(ctx)
-    test_else(ctx)
-    # TODO: Enable admin tests
-    # test_admin(ctx)
+    test_api1(ctx)
+    test_api2(ctx)
+    test_api3(ctx)
 
     if all:
         test_addons(ctx)
+        # TODO: Enable admin tests
+        test_admin(ctx)
         karma(ctx, single=True, browsers='PhantomJS')
 
-OSF_MODELS_TESTS = [
-    'osf_tests',
-]
-@task
-def test_osf_models(ctx):
-    test_module(ctx, OSF_MODELS_TESTS)
 
 @task
 def test_js(ctx):
@@ -675,45 +683,55 @@ def test_js(ctx):
 
 
 @task
-def test_travis_osf(ctx):
+def test_travis_osf(ctx, numprocesses=None):
     """
     Run half of the tests to help travis go faster. Lints and Flakes happen everywhere to keep from wasting test time.
     """
     flake(ctx)
     jshint(ctx)
-    test_osf(ctx)
-    test_addons(ctx)
-    test_osf_models(ctx)
+    test_osf(ctx, numprocesses=numprocesses)
+
 
 @task
-def test_travis_else(ctx):
+def test_travis_else(ctx, numprocesses=None):
     """
     Run other half of the tests to help travis go faster. Lints and Flakes happen everywhere to keep from
     wasting test time.
     """
     flake(ctx)
     jshint(ctx)
-    test_else(ctx)
-    # TODO: Enable admin tests
-    # test_admin(ctx)
+    test_addons(ctx, numprocesses=numprocesses)
+    test_admin(ctx, numprocesses=numprocesses)
+
 
 @task
-def test_travis_api1(ctx):
-    test_api1(ctx)
+def test_travis_api1(ctx, numprocesses=None):
+    flake(ctx)
+    jshint(ctx)
+    test_api1(ctx, numprocesses=numprocesses)
+
 
 @task
-def test_travis_api2(ctx):
-    test_api2(ctx)
+def test_travis_api2(ctx, numprocesses=None):
+    flake(ctx)
+    jshint(ctx)
+    test_api2(ctx, numprocesses=numprocesses)
+
 
 @task
-def test_travis_api3(ctx):
-    test_api3(ctx)
+def test_travis_api3(ctx, numprocesses=None):
+    flake(ctx)
+    jshint(ctx)
+    test_api3(ctx, numprocesses=numprocesses)
+
 
 @task
 def test_travis_varnish(ctx):
     """
     Run the fast and quirky JS tests and varnish tests in isolation
     """
+    flake(ctx)
+    jshint(ctx)
     test_js(ctx)
     test_varnish(ctx)
 
@@ -737,7 +755,7 @@ def karma(ctx, single=False, sauce=False, browsers=None):
 
 
 @task
-def wheelhouse(ctx, addons=False, release=False, dev=False, metrics=False, pty=True):
+def wheelhouse(ctx, addons=False, release=False, dev=False, pty=True):
     """Build wheels for python dependencies.
 
     Examples:
@@ -745,7 +763,6 @@ def wheelhouse(ctx, addons=False, release=False, dev=False, metrics=False, pty=T
         inv wheelhouse --dev
         inv wheelhouse --addons
         inv wheelhouse --release
-        inv wheelhouse --metrics
     """
     if release or addons:
         for directory in os.listdir(settings.ADDON_PATH):
@@ -761,8 +778,6 @@ def wheelhouse(ctx, addons=False, release=False, dev=False, metrics=False, pty=T
         req_file = os.path.join(HERE, 'requirements', 'release.txt')
     elif dev:
         req_file = os.path.join(HERE, 'requirements', 'dev.txt')
-    elif metrics:
-        req_file = os.path.join(HERE, 'requirements', 'metrics.txt')
     else:
         req_file = os.path.join(HERE, 'requirements.txt')
     cmd = 'pip wheel --find-links={} -r {} --wheel-dir={} -c {}'.format(

@@ -8,26 +8,21 @@ import logging
 import math
 import re
 import unicodedata
+from framework import sentry
 
-from django.apps import apps
-from elasticsearch import (
-    ConnectionError,
-    Elasticsearch,
-    NotFoundError,
-    RequestError,
-    TransportError,
-    helpers,
-)
-from modularodm import Q
 import six
 
-from framework import sentry
+from django.apps import apps
+from elasticsearch import (ConnectionError, Elasticsearch, NotFoundError,
+                           RequestError, TransportError, helpers)
 from framework.celery_tasks import app as celery_app
 from framework.mongo.utils import paginated
-
+from modularodm import Q
+from osf.models import AbstractNode as Node
+from osf.models import OSFUser as User
+from osf.models import FileNode
 from website import settings
 from website.filters import gravatar
-from osf.models import OSFUser as User, FileNode, AbstractNode as Node
 from website.project.licenses import serialize_node_license_record
 from website.search import exceptions
 from website.search.util import build_query, clean_splitters
@@ -73,7 +68,8 @@ def client():
         try:
             CLIENT = Elasticsearch(
                 settings.ELASTIC_URI,
-                request_timeout=settings.ELASTIC_TIMEOUT
+                request_timeout=settings.ELASTIC_TIMEOUT,
+                retry_on_timeout=True
             )
             logging.getLogger('elasticsearch').setLevel(logging.WARN)
             logging.getLogger('elasticsearch.trace').setLevel(logging.WARN)
@@ -108,8 +104,15 @@ def requires_search(func):
             except NotFoundError as e:
                 raise exceptions.IndexNotFoundError(e.error)
             except RequestError as e:
-                if 'ParseException' in e.error:
+                if 'ParseException' in e.error:  # ES 1.5
                     raise exceptions.MalformedQueryError(e.error)
+                if type(e.error) == dict:  # ES 2.0
+                    try:
+                        root_cause = e.error['root_cause'][0]
+                        if root_cause['type'] == 'query_parsing_exception':
+                            raise exceptions.MalformedQueryError(root_cause['reason'])
+                    except (AttributeError, KeyError):
+                        pass
                 raise exceptions.SearchException(e.error)
             except TransportError as e:
                 # Catch and wrap generic uncaught ES error codes. TODO: Improve fix for https://openscience.atlassian.net/browse/OSF-4538
