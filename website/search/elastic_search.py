@@ -33,6 +33,12 @@ from website.search.util import build_query, clean_splitters
 from website.util import sanitize
 from website.views import validate_page_num
 
+try:
+    import urllib3.contrib.pyopenssl
+    urllib3.contrib.pyopenssl.inject_into_urllib3()
+except ImportError:
+    pass
+
 logger = logging.getLogger(__name__)
 
 
@@ -77,7 +83,7 @@ def client():
                 settings.ELASTIC_URI,
                 request_timeout=settings.ELASTIC_TIMEOUT,
                 retry_on_timeout=True,
-                **settings.ELASIC_KWARGS
+                **settings.ELASTIC_KWARGS
             )
             logging.getLogger('elasticsearch').setLevel(logging.WARN)
             logging.getLogger('elasticsearch.trace').setLevel(logging.WARN)
