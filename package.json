@@ -60,12 +60,13 @@
     "raw-loader": "^0.5.1",
     "select2": "3.5.1",
     "style-loader": "^0.8.3",
-    "treebeard": "git://github.com/CenterForOpenScience/treebeard.git#d2bb8f6f8104fcac040402727f431c26722b269e",
+    "treebeard": "1.0.0",
     "typeahead.js": "^0.10.5",
     "url-loader": "0.5.7",
     "uuid": "^2.0.1",
     "webpack": "3.8.1",
-    "zxcvbn": "^4.2.0"
+    "zxcvbn": "^4.2.0",
+    "snyk": "^1.319.0"
   },
   "devDependencies": {
     "chai": "^2.1.1",
@@ -86,6 +87,9 @@
   "scripts": {
     "test": "karma start --single-run --browsers ChromeHeadless",
     "webpack-dev": "webpack --config webpack.dev.config.js",
-    "webpack-prod": "webpack --config webpack.prod.config.js"
-  }
+    "webpack-prod": "webpack --config webpack.prod.config.js",
+    "snyk-protect": "snyk protect",
+    "prepare": "yarn run snyk-protect"
+  },
+  "snyk": true
 }
