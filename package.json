@@ -47,7 +47,7 @@
     "lodash.has": "^4.5.2",
     "lodash.includes": "^4.3.0",
     "lodash.set": "^4.3.2",
-    "markdown-it": "~12.3.2",
+    "markdown-it": "~13.0.2",
     "markdown-it-ins-del": "^0.1.1",
     "markdown-it-sanitizer": "~0.4.3",
     "mime-types": "~2.1.34",
