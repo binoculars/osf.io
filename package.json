@@ -16,7 +16,7 @@
     "assets-webpack-plugin": "^2.3.0",
     "babel-core": "^6.0.0",
     "babel-loader": "^6.4.1",
-    "body-parser": "~1.19.1",
+    "body-parser": "~1.20.3",
     "bootbox": "^5.5.2",
     "bootstrap": "3.3.7",
     "bower": "^1.8.8",
