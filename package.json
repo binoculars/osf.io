@@ -21,7 +21,7 @@
     "bootstrap": "3.3.7",
     "bower": "^1.8.8",
     "css-loader": "^0.28.11",
-    "diff": "~5.0.0",
+    "diff": "~8.0.3",
     "dropzone": "https://github.com/CenterForOpenScience/dropzone.git#aba21eb6b82cc823ac7a7a53d6e035791c082bae",
     "exports-loader": "0.6.3",
     "file-loader": "^0.11.2",
@@ -63,7 +63,7 @@
     "typeahead.js": "^0.11.1",
     "url-loader": "~0.6.2",
     "uuid": "^8.3.2",
-    "webpack": "3.12.0",
+    "webpack": "5.0.0",
     "zxcvbn": "^4.2.0"
   },
   "scripts": {
